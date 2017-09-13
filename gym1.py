@@ -11,6 +11,7 @@ import sys
 from keras.layers import Dense
 from keras.models import Sequential
 from keras.optimizers import Adam
+from keras.models import model_from_json
 
 
 class DQNAgent:
@@ -18,8 +19,8 @@ class DQNAgent:
 		self.state_size = state_size
 		self.action_size = action_size
 		self.memory = collections.deque(maxlen=2000)
-		self.gamma = 0.95    # discount rate
-		self.epsilon = 1.0  # exploration rate
+		self.gamma = 0.95
+		self.epsilon = 1.0
 		self.epsilon_min = 0.01
 		self.epsilon_decay = 0.995
 		self.learning_rate = 0.001
@@ -29,24 +30,27 @@ class DQNAgent:
 		if os.path.isfile("deepQNet.json"):
 			print ("I've found a model in your directory.")
 			response = raw_input("Should I attempt to load it? (y/n) ")
-			try:
-				json_file = open("deepQNet.json", "r")
-				json_model = json_file.read()
-				json_file.close()
-				self.model = model_from_json(json_model)
-				print ("Loaded model")
-				self.model.load_weights("deepQNet.h5")
-				print ("Loaded weights")
-				return True
-			except:
-				print ("Error: " + str(sys.exc_info()[0]))
+			if (response == 'y'):
+				try:
+					json_file = open("deepQNet.json", "r")
+					json_model = json_file.read()
+					json_file.close()
+					self.model = model_from_json(json_model)
+					self.model.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
+					print ("Loaded model")
+					self.model.load_weights("deepQNet.h5")
+					print ("Loaded weights")
+					return True
+				except IOError:
+					print ("Error: " + str(sys.exc_info()[0]))
+					return False
+			else:
 				return False
 	
 	def _build_model(self):
-		# Neural Net for Deep-Q learning Model
 		model = Sequential()
-		model.add(Dense(24, input_dim=self.state_size, activation='relu'))
-		model.add(Dense(24, activation='relu'))
+		model.add(Dense(24, input_dim=self.state_size, activation='sigmoid'))
+		model.add(Dense(24, activation='sigmoid'))
 		model.add(Dense(self.action_size, activation='linear'))
 		model.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
 		return model
@@ -58,7 +62,7 @@ class DQNAgent:
 		if np.random.rand() <= self.epsilon:
 			return random.randrange(self.action_size)
 		act_values = self.model.predict(state)
-		return np.argmax(act_values[0])  # returns action
+		return np.argmax(act_values[0])
 
 
 	def replay(self, batch_size):
@@ -107,7 +111,7 @@ class CartPole:
 	def load_model(self):
 		self.agent.load_model()
 
-	def run_episode(self, num_episodes=250, num_frames=1000):
+	def run_episode(self, num_episodes=200, num_frames=1000):
 		print ("Running " + str(num_episodes) + " episodes, " + str(num_frames) + " frames each")
 
 		for episode in range(num_episodes):
@@ -164,6 +168,19 @@ def main():
 if __name__ == '__main__':
 	main()
 
+
+# tensorflow
+def addOne(x):
+	return x + 1
+
+def addTwo(x):
+	return x + 2
+
+def addAnything(x, input):
+	if (input == 1):
+		addOne()
+	if (input == 2):
+		addTwo()
 
 
 
