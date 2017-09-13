@@ -15,9 +15,10 @@ from keras.models import model_from_json
 
 
 class DQNAgent:
-	def __init__(self, state_size, action_size):
-		self.state_size = state_size
-		self.action_size = action_size
+	def __init__(self, _state_size, _action_size, _num_episodes):
+		self.state_size = _state_size
+		self.action_size = _action_size
+		self.num_episodes = _num_episodes
 		self.memory = collections.deque(maxlen=2000)
 		self.gamma = 0.95
 		self.epsilon = 1.0
@@ -48,8 +49,8 @@ class DQNAgent:
 	
 	def _build_model(self):
 		model = Sequential()
-		model.add(Dense(24, input_dim=self.state_size, activation='sigmoid'))
-		model.add(Dense(24, activation='sigmoid'))
+		model.add(Dense(24, input_shape=(self.state_size, ), activation='relu'))
+		model.add(Dense(24, activation='relu'))
 		model.add(Dense(self.action_size, activation='linear'))
 		model.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
 		return model
@@ -71,13 +72,30 @@ class DQNAgent:
 			minibatch = random.sample(self.memory, len(self.memory))
 		for state, action, reward, next_state, done in minibatch:
 			target = reward
+			prediction = self.model.predict(next_state)
 			if not done:
-				target = reward + self.gamma * np.amax(self.model.predict(next_state)[0])
+				target = reward + (self.gamma * np.amax(self.model.predict(next_state)[0]))
+			else:
+				target -= reward
 			target_f = self.model.predict(state)
 			target_f[0][action] = target
-			self.model.fit(state, target_f, epochs=1, verbose=0)
+
+
+			self.model.fit(x=state, y=target_f, epochs=1, verbose=0)
+
 		if self.epsilon > self.epsilon_min:
-			self.epsilon *= self.epsilon_decay
+			self.epsilon = self.decay_function(self.epsilon)
+
+	def decay_function(self, x):
+		return (-1 / (1 + np.exp(-(((10*x)/self.num_episodes) - 5)))) + 1
+
+	def featurize(self, batch_size):
+		try:
+			minibatch = random.sample(self.memory, batch_size)
+		except ValueError:
+			minibatch = random.sample(self.memory, len(self.memory))
+
+
 
 	def save_model(self):
 		print ("Training complete.")
@@ -94,7 +112,8 @@ class CartPole:
 
 	def __init__(self):
 		self.env = gym.make('CartPole-v0')
-		self.agent = DQNAgent(4, 2)
+		self.num_episodes = 200
+		self.agent = DQNAgent(4, 2, self.num_episodes)
 
 	def visualize(self, observation):
 		obs_dict = dict.fromkeys([0,1,2,3])
@@ -166,22 +185,6 @@ def main():
 
 if __name__ == '__main__':
 	main()
-
-
-# tensorflow
-def addOne(x):
-	return x + 1
-
-def addTwo(x):
-	return x + 2
-
-def addAnything(x, input):
-	if (input == 1):
-		addOne()
-	if (input == 2):
-		addTwo()
-
-
 
 
 
