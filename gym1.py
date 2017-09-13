@@ -3,6 +3,7 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 import random
+import math
 import keras
 import collections
 import os
@@ -13,99 +14,130 @@ from keras.models import Sequential
 from keras.optimizers import Adam
 from keras.models import model_from_json
 
+import numpy as np
+from scipy import optimize
 
-class DQNAgent:
-	def __init__(self, _state_size, _action_size, _num_episodes):
-		self.state_size = _state_size
-		self.action_size = _action_size
-		self.num_episodes = _num_episodes
+class Neural_Network(object):
+	def __init__(self, Lambda = 0):
+		# we have num hours of workout and num calories
+		# a 4 layer network
+		self.inputLayerSize = 4
+		self.outputLayerSize = 1
+		self.firstLayerSize = 3
+		self.secondLayerSize = 3
+
+		self.W1 = np.random.randn(self.inputLayerSize,self.firstLayerSize)
+		self.W2 = np.random.randn(self.firstLayerSize,self.secondLayerSize)
+		self.W3 = np.random.randn(self.secondLayerSize,self.outputLayerSize)
+
+		self.Lambda = Lambda
+
+		self.trainX = None
+		self.trainY = None
+		self.trainYarr = []
 		self.memory = collections.deque(maxlen=2000)
+
 		self.gamma = 0.95
 		self.epsilon = 1.0
 		self.epsilon_min = 0.01
 		self.epsilon_decay = 0.995
 		self.learning_rate = 0.001
-		self.model = self._build_model()
 
-	def load_model(self):
-		if os.path.isfile("deepQNet.json"):
-			print ("I've found a model in your directory.")
-			response = raw_input("Should I attempt to load it? (y/n) ")
-			if (response == 'y'):
-				try:
-					json_file = open("deepQNet.json", "r")
-					json_model = json_file.read()
-					json_file.close()
-					self.model = model_from_json(json_model)
-					print ("Loaded model")
-					self.model.load_weights("deepQNet.h5")
-					print ("Loaded weights")
-					return True
-				except IOError:
-					print ("Error: " + str(sys.exc_info()[0]))
-					return False
-			else:
-				return False
-	
-	def _build_model(self):
-		model = Sequential()
-		model.add(Dense(24, input_shape=(self.state_size, ), activation='relu'))
-		model.add(Dense(24, activation='relu'))
-		model.add(Dense(self.action_size, activation='linear'))
-		model.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
-		return model
+	def forward(self, x):
+		self.z2 = np.dot(x, self.W1)
+		self.a2 = self.sigmoid(self.z2)
+		self.z3 = np.dot(self.a2, self.W2)
+		self.a3 = self.sigmoid(self.z3)
+		self.z4 = np.dot(self.a3, self.W3)
+		yHat = self.sigmoid(self.z4)
+		print yHat
+		return yHat
+
+	def costFunction(self, x, y):
+		self.yHat = self.forward(x)
+		J = 0.5*sum((y-self.yHat)**2)/x.shape[0] + (self.Lambda/2)*(np.sum(self.W1**2)+np.sum(self.W2**2)+np.sum(self.W3**2))
+		return J
+
+
+	def costFunctionPrime(self, x, y):
+		self.yHat = self.forward(x)
+
+		delta4 = np.multiply(-(y-self.yHat), self.sigmoidPrime(self.z4))
+		dJdW3 = np.dot(self.a3.T, delta4) + self.Lambda*self.W3
+
+		delta3 = np.dot(delta4, self.W3.T) * self.sigmoidPrime(self.z3)
+		dJdW2 = np.dot(self.a2.T, delta3) + self.Lambda*self.W2
+
+		delta2 = np.dot(delta3, self.W2.T) * self.sigmoidPrime(self.z2)
+		dJdW1 = np.dot(x.T, delta2) + self.Lambda*self.W1
+		return dJdW1, dJdW2, dJdW3
+
+	def sigmoid(self, z):
+		return 1/(1+np.exp(-z))
+
+	def sigmoidPrime(self, z):
+		# derivative of sigmoid function
+		return np.exp(-z)/((1+np.exp(-z))**2)
+
+	def getParams(self):
+        # get W1, W2 and W3 Rolled into vector:
+		params = np.concatenate((self.W1.ravel(), self.W2.ravel(), self.W3.ravel()))
+		return params
+    
+	def setParams(self, params):
+		#Set W1 and W2 using single parameter vector:
+		W1_start = 0
+		W1_end = self.firstLayerSize*self.inputLayerSize
+		self.W1 = np.reshape(params[W1_start:W1_end], \
+			(self.inputLayerSize, self.firstLayerSize))
+
+		W2_end = W1_end + self.firstLayerSize*self.secondLayerSize
+		self.W2 = np.reshape(params[W1_end:W2_end], \
+			(self.firstLayerSize, self.secondLayerSize))
+
+		W3_end = W2_end + self.secondLayerSize*self.outputLayerSize
+		self.W3 = np.reshape(params[W2_end:W3_end], \
+			(self.secondLayerSize, self.outputLayerSize))
+
+	def computeGradients(self, x, y):
+		dJdW1, dJdW2, dJdW3 = self.costFunctionPrime(x,y)
+		return np.concatenate((dJdW1.ravel(),dJdW2.ravel(),dJdW3.ravel()))
 
 	def remember(self, state, action, reward, next_state, done):
 		self.memory.append((state, action, reward, next_state, done))
 
-	def act(self, state):
-		if np.random.rand() <= self.epsilon:
-			return random.randrange(self.action_size)
-		act_values = self.model.predict(state)
-		return np.argmax(act_values[0])
+		target = reward
+		prediction = self.forward(next_state)
 
+		self.trainX = np.array(state)
+		self.trainY = np.array([target])
 
-	def replay(self, batch_size):
-		try:
-			minibatch = random.sample(self.memory, batch_size)
-		except ValueError:
-			minibatch = random.sample(self.memory, len(self.memory))
-		for state, action, reward, next_state, done in minibatch:
-			target = reward
-			prediction = self.model.predict(next_state)
-			if not done:
-				target = reward + (self.gamma * np.amax(self.model.predict(next_state)[0]))
-			else:
-				target -= reward
-			target_f = self.model.predict(state)
-			target_f[0][action] = target
+class Trainer(object):
+	def __init__(self, N):
+		# local reference to neural network
+		self.N = N
 
+	def costFunctionWrapper(self, params, x, y):
+		self.N.setParams(params)
+		cost = self.N.costFunction(x,y)
+		grad = self.N.computeGradients(x,y)
+		return cost, grad
 
-			self.model.fit(x=state, y=target_f, epochs=1, verbose=0)
+	def callBackF(self, params):
+		self.N.setParams(params)
+		self.J.append(self.N.costFunction(self.N.trainX, self.N.trainY))
 
-		if self.epsilon > self.epsilon_min:
-			self.epsilon = self.decay_function(self.epsilon)
+	def train(self):
+		self.J = []
 
-	def decay_function(self, x):
-		return (-1 / (1 + np.exp(-(((10*x)/self.num_episodes) - 5)))) + 1
+		params0 = self.N.getParams()
+		options = {'maxiter':500, 'disp': True}
+		_res = optimize.minimize(self.costFunctionWrapper, params0, \
+			jac = True, method='BFGS', args=(self.N.trainX,self.N.trainY), \
+			options = options, callback=self.callBackF)
 
-	def featurize(self, batch_size):
-		try:
-			minibatch = random.sample(self.memory, batch_size)
-		except ValueError:
-			minibatch = random.sample(self.memory, len(self.memory))
-
-
-
-	def save_model(self):
-		print ("Training complete.")
-		model_json = self.model.to_json()
-		with open("deepQNet.json", "w") as open_file:
-			open_file.write(model_json)
-		print ("Model saved!")
-		self.model.save_weights("deepQNet.h5")
-		print ("Weights saved!")
-
+		self.N.setParams(_res.x)
+		self.optimizationResults = _res
 
 
 class CartPole:
@@ -113,7 +145,8 @@ class CartPole:
 	def __init__(self):
 		self.env = gym.make('CartPole-v0')
 		self.num_episodes = 200
-		self.agent = DQNAgent(4, 2, self.num_episodes)
+		self.nn = Neural_Network()
+		self.trainer = Trainer(self.nn)
 
 	def visualize(self, observation):
 		obs_dict = dict.fromkeys([0,1,2,3])
@@ -127,7 +160,7 @@ class CartPole:
 		plt.pause(0.01)
 
 	def load_model(self):
-		self.agent.load_model()
+		pass
 
 	def run_episode(self, num_episodes=200, num_frames=1000):
 		print ("Running " + str(num_episodes) + " episodes, " + str(num_frames) + " frames each")
@@ -138,24 +171,20 @@ class CartPole:
 
 			for frame in range(num_frames):
 				self.env.render()
-				action = self.agent.act(state)
+				action = int(self.nn.forward(state)[0][0] + 0.5)
 
 				observation, reward, done, info = self.env.step(action)
 				next_state = np.reshape(observation, [1, 4])
 
-				self.agent.remember(state, action, reward, next_state, done)
+				self.nn.remember(state, action, reward, next_state, done)
 
 				state = next_state
 
 				if (done):
 					print ("episode: {}/{}, score: {}".format(episode, num_episodes, frame))
-					print ("Episode completed")
 					break
 
-			self.agent.replay(128)
-
-	def save_model(self):
-		self.agent.save_model()
+			self.trainer.train()
 
 	def play(self):
 		while (True):
@@ -179,17 +208,9 @@ def main():
 	cart_pole = CartPole()
 	if (not cart_pole.load_model()):
 		cart_pole.run_episode()
-		cart_pole.save_model()
 	cart_pole.play()
 
 
 if __name__ == '__main__':
 	main()
-
-
-
-
-
-
-
 
