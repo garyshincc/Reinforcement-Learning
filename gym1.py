@@ -36,7 +36,6 @@ class DQNAgent:
 					json_model = json_file.read()
 					json_file.close()
 					self.model = model_from_json(json_model)
-					self.model.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
 					print ("Loaded model")
 					self.model.load_weights("deepQNet.h5")
 					print ("Loaded weights")
