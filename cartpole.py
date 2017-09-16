@@ -1,6 +1,7 @@
 import gym
 import os
 import sys
+import random
 
 from keras.models import Sequential
 from keras.optimizers import Adam
@@ -18,7 +19,8 @@ class DeepQNetAgent:
 		self.discount_rate = 0.99
 		self.learning_rate = 0.001
 		self.memory = list()
-
+		print ("")
+		print (self.action_size)
 
 		self._create_model()
 
@@ -50,9 +52,9 @@ class DeepQNetAgent:
 
 	def _create_model(self):
 		self.model = Sequential()
-		self.model.add(Dense(units=32, input_shape=(4,), activation='relu'))
-		self.model.add(Dense(units=32, activation='relu'))
-		self.model.add(Dense(units=32, activation='relu'))
+		self.model.add(Dense(units=32, input_shape=(4,)))
+		self.model.add(Dense(units=24, activation='relu'))
+		self.model.add(Dense(units=16, activation='relu'))
 		self.model.add(Dense(units=self.action_size, activation='sigmoid'))
 		self.model.compile(optimizer=Adam(lr=self.learning_rate), loss='mse')
 
@@ -60,13 +62,27 @@ class DeepQNetAgent:
 		self.memory.append(observation)
 
 	def reinforce(self, review_episodes):
-		
+		try:
+			batch = random.sample(self.memory, review_episodes)
+		except ValueError:
+			batch = random.sample(self.memory, len(self.memory))
+
+		for sample in batch:
+			observation, reward = sample
+
+	def action(self, state):
+		action = self.model.predict(np.reshape(state, [1,4]))
+		#print(np.argmax(action[0]))
+		return np.argmax(action[0])
+
+
 
 class CartPole:
 
 	def __init__(self):
 		self.env = gym.make('CartPole-v0')
 		self.agent = DeepQNetAgent(self.env.observation_space.shape[0], self.env.action_space.n)
+		self.num_reinforce = 32
 
 	def load_model(self):
 		self.agent.load_model()
@@ -79,18 +95,22 @@ class CartPole:
 
 		for episode in range(num_episodes):
 			state = self.env.reset()
-			state = np.reshape(state, [1, 4])
+			prev_state = state
 
 			for frame in range(num_frames):
 				self.env.render()
-				action = self.env.action_space.sample()
+				#action = self.env.action_space.sample()
+				action = self.agent.action(state)
 
-				observation, reward, done, info = self.env.step(action)
+				state, reward, done, info = self.env.step(action)
+				observation = (state, reward)
+				self.agent.remember(observation)
 
 				if (done):
 					print ("episode: {}/{}, score: {}".format(episode, num_episodes, frame))
 					print ("Episode completed")
 					break
+			self.agent.reinforce(self.num_reinforce)
 
 	def play(self):
 		while (True):
