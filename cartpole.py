@@ -3,6 +3,7 @@ import os
 import sys
 import random
 import time
+import collections
 
 from keras.models import Sequential
 from keras.optimizers import Adam
@@ -20,12 +21,12 @@ class cartPoleModelAgent:
 		self.action_size = action_size
 		self.discount_rate = 0.95
 		self.learning_rate = 0.001
-		self.memory = list()
+		self.memory = collections.deque(maxlen=3000)
 
 	def load_model(self):
 		if os.path.isfile("cartPoleModel.json"):
 			print ("I've found a model in your directory.")
-			response = input("Should I attempt to load it? (y/n) ")
+			response = input("Should I attempt to load it? (y/n):")
 			if (response == 'y'):
 				try:
 					json_file = open("cartPoleModel.json", "r")
@@ -51,11 +52,27 @@ class cartPoleModelAgent:
 		self.model.save_weights("cartPoleModel.h5")
 		print ("Weights saved!")
 
+		print ("Saving full train version.")
+		for sample in self.memory:
+			state, action, reward, done, next_state = sample
+			target = reward
+			if (not done):
+				target = reward + self.discount_rate * np.amax(self.model.predict(np.reshape(next_state, [1,4]))[0])
+			train_target = self.model.predict(np.reshape(state, [1,4]))
+			train_target[0][action] = target
+			self.model.fit(np.reshape(state, [1,4]), train_target, epochs=1, verbose=0)
+		model_json = self.model.to_json()
+		with open("cartPoleModelFull.json", "w") as open_file:
+			open_file.write(model_json)
+		print ("Model saved!")
+		self.model.save_weights("cartPoleModelFull.h5")
+		print ("Weights saved!")
+
 	def create_model(self):
 		self.model = Sequential()
-		self.model.add(Dense(units=32, input_shape=(4,), activation='sigmoid'))
-		self.model.add(Dense(units=32, activation='sigmoid'))
-		self.model.add(Dense(units=32, activation='sigmoid'))
+		self.model.add(Dense(units=16, input_shape=(4,), activation='relu'))
+		self.model.add(Dense(units=16, activation='relu'))
+		self.model.add(Dense(units=16, activation='relu'))
 		self.model.add(Dense(units=self.action_size, activation='linear'))
 		self.model.compile(optimizer=Adam(lr=self.learning_rate), loss='mse')
 
@@ -68,6 +85,7 @@ class cartPoleModelAgent:
 		except ValueError:
 			batch = random.sample(self.memory, len(self.memory))
 
+		print ("training a batch of: {} memory cells".format(len(batch)))
 		for sample in batch:
 			state, action, reward, done, next_state = sample
 			target = reward
@@ -76,8 +94,6 @@ class cartPoleModelAgent:
 			# best find of next state
 			if (not done):
 				target = reward + self.discount_rate * np.amax(self.model.predict(np.reshape(next_state, [1,4]))[0])
-			else:
-				target /= 2
 			train_target = self.model.predict(np.reshape(state, [1,4]))
 			train_target[0][action] = target
 			#print ("train_target after: {}".format(train_target))
@@ -86,7 +102,7 @@ class cartPoleModelAgent:
 
 	def action(self, state):
 		action = self.model.predict(np.reshape(state, [1,4]))
-		print ("action: {}".format(action))
+		#print ("action: {}".format(action))
 		action = np.argmax(action[0])
 		return action
 
@@ -97,8 +113,8 @@ class CartPole:
 	def __init__(self):
 		self.env = gym.make('CartPole-v0')
 		self.agent = cartPoleModelAgent(self.env.observation_space.shape[0], self.env.action_space.n)
-		self.num_reinforce = 64
-		self.exploration_rate = 0.1
+		self.num_reinforce = 512
+		self.exploration_rate = 0.2
 		self.exploration_decay = 0.99
 		self.min_exploration_rate = 0.01
 
@@ -111,7 +127,7 @@ class CartPole:
 	def save_model(self):
 		self.agent.save_model()
 
-	def run_episode(self, num_episodes=250, num_frames=1000):
+	def run_episode(self, num_episodes=250, num_frames=200):
 		print ("Running " + str(num_episodes) + " episodes, " + str(num_frames) + " frames each")
 
 		for episode in range(num_episodes):
@@ -144,6 +160,8 @@ class CartPole:
 			while (True):
 				self.env.render()
 				action = self.agent.action(state)
+				if (np.random.rand() < 0.1):
+					action = self.env.action_space.sample()
 				observation, reward, done, info = self.env.step(action)
 				state = observation
 
