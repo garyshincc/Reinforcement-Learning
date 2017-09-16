@@ -18,7 +18,7 @@ class cartPoleModelAgent:
 	def __init__(self, state_size, action_size):
 		self.state_size = state_size
 		self.action_size = action_size
-		self.discount_rate = 0.995
+		self.discount_rate = 0.95
 		self.learning_rate = 0.001
 		self.memory = list()
 
@@ -76,16 +76,17 @@ class cartPoleModelAgent:
 			# best find of next state
 			if (not done):
 				target = reward + self.discount_rate * np.amax(self.model.predict(np.reshape(next_state, [1,4]))[0])
-				
-
+			else:
+				target /= 2
 			train_target = self.model.predict(np.reshape(state, [1,4]))
 			train_target[0][action] = target
-			print ("train_target after: {}".format(train_target))
+			#print ("train_target after: {}".format(train_target))
 
 			self.model.fit(np.reshape(state, [1,4]), train_target, epochs=1, verbose=0)
 
 	def action(self, state):
 		action = self.model.predict(np.reshape(state, [1,4]))
+		print ("action: {}".format(action))
 		action = np.argmax(action[0])
 		return action
 
@@ -96,7 +97,7 @@ class CartPole:
 	def __init__(self):
 		self.env = gym.make('CartPole-v0')
 		self.agent = cartPoleModelAgent(self.env.observation_space.shape[0], self.env.action_space.n)
-		self.num_reinforce = 32
+		self.num_reinforce = 64
 		self.exploration_rate = 0.1
 		self.exploration_decay = 0.99
 		self.min_exploration_rate = 0.01
@@ -110,7 +111,7 @@ class CartPole:
 	def save_model(self):
 		self.agent.save_model()
 
-	def run_episode(self, num_episodes=500, num_frames=1000):
+	def run_episode(self, num_episodes=250, num_frames=1000):
 		print ("Running " + str(num_episodes) + " episodes, " + str(num_frames) + " frames each")
 
 		for episode in range(num_episodes):
@@ -133,7 +134,6 @@ class CartPole:
 					print ("episode: {}/{}, score: {}".format(episode, num_episodes, frame))
 					self.exploration_rate *= self.exploration_decay
 					self.exploration_rate = max(self.exploration_rate, self.min_exploration_rate)
-					print ("exploration rate: {}".format(self.exploration_rate))
 					break
 			self.agent.reinforce(self.num_reinforce)
 
