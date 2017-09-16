@@ -2,60 +2,61 @@ import gym
 import os
 import sys
 import random
+import time
 
 from keras.models import Sequential
 from keras.optimizers import Adam
 from keras.layers.core import Dense
-
+from keras.models import load_model
+from keras.models import model_from_json
 
 import numpy as np
 
 
 
-class DeepQNetAgent:
+class cartPoleModelAgent:
 	def __init__(self, state_size, action_size):
 		self.state_size = state_size
 		self.action_size = action_size
-		self.discount_rate = 0.99
+		self.discount_rate = 0.995
 		self.learning_rate = 0.001
 		self.memory = list()
-		print ("")
-		print (self.action_size)
-
-		self._create_model()
 
 	def load_model(self):
-		if os.path.isfile("deepQNet.json"):
+		if os.path.isfile("cartPoleModel.json"):
 			print ("I've found a model in your directory.")
 			response = input("Should I attempt to load it? (y/n) ")
-			try:
-				json_file = open("deepQNet.json", "r")
-				json_model = json_file.read()
-				json_file.close()
-				self.model = model_from_json(json_model)
-				print ("Loaded model")
-				self.model.load_weights("deepQNet.h5")
-				print ("Loaded weights")
-				return True
-			except:
-				print ("Error: " + str(sys.exc_info()[0]))
-				return False
+			if (response == 'y'):
+				try:
+					json_file = open("cartPoleModel.json", "r")
+					json_model = json_file.read()
+					json_file.close()
+					self.model = model_from_json(json_model)
+					print ("Loaded model")
+					self.model.load_weights("cartPoleModel.h5")
+					print ("Loaded weights")
+					time.sleep(1)
+					return True
+				except:
+					print ("Error: " + str(sys.exc_info()[0]))
+
+		return False
 
 	def save_model(self):
 		print ("Training complete.")
 		model_json = self.model.to_json()
-		with open("deepQNet.json", "w") as open_file:
+		with open("cartPoleModel.json", "w") as open_file:
 			open_file.write(model_json)
 		print ("Model saved!")
-		self.model.save_weights("deepQNet.h5")
+		self.model.save_weights("cartPoleModel.h5")
 		print ("Weights saved!")
 
-	def _create_model(self):
+	def create_model(self):
 		self.model = Sequential()
-		self.model.add(Dense(units=32, input_shape=(4,)))
-		self.model.add(Dense(units=24, activation='relu'))
-		self.model.add(Dense(units=16, activation='relu'))
-		self.model.add(Dense(units=self.action_size, activation='sigmoid'))
+		self.model.add(Dense(units=32, input_shape=(4,), activation='sigmoid'))
+		self.model.add(Dense(units=32, activation='sigmoid'))
+		self.model.add(Dense(units=32, activation='sigmoid'))
+		self.model.add(Dense(units=self.action_size, activation='linear'))
 		self.model.compile(optimizer=Adam(lr=self.learning_rate), loss='mse')
 
 	def remember(self, observation):
@@ -68,12 +69,25 @@ class DeepQNetAgent:
 			batch = random.sample(self.memory, len(self.memory))
 
 		for sample in batch:
-			observation, reward = sample
+			state, action, reward, done, next_state = sample
+			target = reward
+
+			# goal is to increase the 'previous state' with
+			# best find of next state
+			if (not done):
+				target = reward + self.discount_rate * np.amax(self.model.predict(np.reshape(next_state, [1,4]))[0])
+				
+
+			train_target = self.model.predict(np.reshape(state, [1,4]))
+			train_target[0][action] = target
+			print ("train_target after: {}".format(train_target))
+
+			self.model.fit(np.reshape(state, [1,4]), train_target, epochs=1, verbose=0)
 
 	def action(self, state):
 		action = self.model.predict(np.reshape(state, [1,4]))
-		#print(np.argmax(action[0]))
-		return np.argmax(action[0])
+		action = np.argmax(action[0])
+		return action
 
 
 
@@ -81,34 +95,45 @@ class CartPole:
 
 	def __init__(self):
 		self.env = gym.make('CartPole-v0')
-		self.agent = DeepQNetAgent(self.env.observation_space.shape[0], self.env.action_space.n)
+		self.agent = cartPoleModelAgent(self.env.observation_space.shape[0], self.env.action_space.n)
 		self.num_reinforce = 32
+		self.exploration_rate = 0.1
+		self.exploration_decay = 0.99
+		self.min_exploration_rate = 0.01
 
 	def load_model(self):
-		self.agent.load_model()
+		model_loaded = self.agent.load_model()
+		if (not model_loaded):
+			self.agent.create_model()
+		return model_loaded
 
 	def save_model(self):
 		self.agent.save_model()
 
-	def run_episode(self, num_episodes=250, num_frames=1000):
+	def run_episode(self, num_episodes=500, num_frames=1000):
 		print ("Running " + str(num_episodes) + " episodes, " + str(num_frames) + " frames each")
 
 		for episode in range(num_episodes):
 			state = self.env.reset()
-			prev_state = state
 
 			for frame in range(num_frames):
 				self.env.render()
-				#action = self.env.action_space.sample()
 				action = self.agent.action(state)
+				if (np.random.rand() < self.exploration_rate):
+					action = self.env.action_space.sample()
 
-				state, reward, done, info = self.env.step(action)
-				observation = (state, reward)
-				self.agent.remember(observation)
+				observation, reward, done, info = self.env.step(action)
+				next_state = np.reshape(observation, [1,4])
 
+				status = (state, action, reward, done, next_state)
+				self.agent.remember(status)
+
+				state = next_state
 				if (done):
 					print ("episode: {}/{}, score: {}".format(episode, num_episodes, frame))
-					print ("Episode completed")
+					self.exploration_rate *= self.exploration_decay
+					self.exploration_rate = max(self.exploration_rate, self.min_exploration_rate)
+					print ("exploration rate: {}".format(self.exploration_rate))
 					break
 			self.agent.reinforce(self.num_reinforce)
 
@@ -118,9 +143,9 @@ class CartPole:
 
 			while (True):
 				self.env.render()
-
+				action = self.agent.action(state)
 				observation, reward, done, info = self.env.step(action)
-				state = next_state
+				state = observation
 
 				if (done):
 					print ("Episode completed")
@@ -129,7 +154,9 @@ class CartPole:
 
 def main():
 	cart_pole = CartPole()
-	if (not cart_pole.load_model()):
+	model_loaded = cart_pole.load_model()
+	if (not model_loaded):
+		print ("Could not find model. Creating new model.")
 		cart_pole.run_episode()
 		cart_pole.save_model()
 	cart_pole.play()
