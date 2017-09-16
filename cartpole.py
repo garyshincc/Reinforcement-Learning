@@ -22,7 +22,7 @@ class cartPoleModelAgent:
 		self.discount_rate = 0.95
 		self.learning_rate = 0.01
 		self.learning_decay = 0.01
-		self.memory = collections.deque(maxlen=50000)
+		self.memory = collections.deque(maxlen=20000)
 
 	def load_model(self):
 		if os.path.isfile("cartPoleModel.json"):
@@ -136,7 +136,7 @@ class CartPole:
 	def save_model(self):
 		self.agent.save_model()
 
-	def run_episode(self, num_episodes=250, num_frames=200):
+	def run_episode(self, num_episodes=300, num_frames=300):
 		print ("Running {} episodes, {} frames each".format(num_episodes,num_frames))
 
 		for episode in range(num_episodes):
@@ -169,11 +169,7 @@ class CartPole:
 			while (True):
 				self.env.render()
 				action = self.agent.action(state)
-				if (np.random.rand() < 0.1):
-					action = self.env.action_space.sample()
-				observation, reward, done, info = self.env.step(action)
-				state = observation
-
+				self.env.step(action)
 				if (done):
 					print ("Episode completed")
 					break
