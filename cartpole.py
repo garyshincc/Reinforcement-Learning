@@ -22,20 +22,20 @@ class cartPoleModelAgent:
 		self.discount_rate = 0.95
 		self.learning_rate = 0.01
 		self.learning_decay = 0.01
-		self.memory = collections.deque(maxlen=20000)
+		self.memory = collections.deque(maxlen=5000)
 
 	def load_model(self):
-		if os.path.isfile("cartPoleModel.json"):
+		if os.path.isfile("cartPoleModelFull.json"):
 			print ("I've found a model in your directory.")
 			response = input("Should I attempt to load it? (y/n):")
 			if (response == 'y'):
 				try:
-					json_file = open("cartPoleModel.json", "r")
+					json_file = open("cartPoleModelFull.json", "r")
 					json_model = json_file.read()
 					json_file.close()
 					self.model = model_from_json(json_model)
 					print ("Loaded model")
-					self.model.load_weights("cartPoleModel.h5")
+					self.model.load_weights("cartPoleModelFull.h5")
 					print ("Loaded weights")
 					time.sleep(1)
 					return True
@@ -124,7 +124,7 @@ class CartPole:
 		self.agent = cartPoleModelAgent(self.env.observation_space.shape[0], self.env.action_space.n)
 		self.num_reinforce = 128
 		self.exploration_rate = 1
-		self.exploration_decay = 0.995
+		self.exploration_decay = 0.95
 		self.min_exploration_rate = 0.01
 
 	def load_model(self):
@@ -136,13 +136,13 @@ class CartPole:
 	def save_model(self):
 		self.agent.save_model()
 
-	def run_episode(self, num_episodes=300, num_frames=300):
+	def run_episode(self, num_episodes=1000, num_frames=300):
 		print ("Running {} episodes, {} frames each".format(num_episodes,num_frames))
-
+		net_score = 0
 		for episode in range(num_episodes):
 			state = self.env.reset()
 
-			for frame in range(num_frames):
+			for frame in range(1, num_frames):
 				#self.env.render()
 				action = self.agent.action(state)
 				if (np.random.rand() < self.exploration_rate):
@@ -158,8 +158,17 @@ class CartPole:
 					print ("episode: {}/{}, score: {}".format(episode, num_episodes, frame))
 					break
 
+			net_score += frame
+			if (episode % 100 == 0):
+				average = net_score / 100.0
+				net_score = 0
+				print ("Average score was: {} from last 100 episodes.".format(average))
+				if (average >= 180):
+					print ("Last average score over 100 episode was: {}. Solution found!".format(average))
+					return
 			if (self.exploration_rate > self.min_exploration_rate):
 				self.exploration_rate *= self.exploration_decay
+			#print ("exploration rate: {}".format(self.exploration_rate))
 			self.agent.reinforce(self.num_reinforce)
 
 	def play(self):
@@ -169,10 +178,10 @@ class CartPole:
 			while (True):
 				self.env.render()
 				action = self.agent.action(state)
-				self.env.step(action)
+				state, reward, done, info = self.env.step(action)
 				if (done):
-					print ("Episode completed")
 					break
+			print ("Episode completed")
 
 
 def main():
